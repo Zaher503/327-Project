@@ -2,8 +2,8 @@
 
 - File upload & download (HTTP over TCP)
 - Metadata persistence (SQLite + SQLAlchemy)
-- Optimistic concurrency with `ETag` + `If-Match` headers
-- Simple sharing (grant permission to another user id)
+- Concurrency with `ETag` + `If-Match` headers
+- Simple sharing (gives permission to another user id)
 - RabbitMQ publishing of events: `file.uploaded`, `file.updated`, `file.shared`
 - Health checks and OpenAPI docs
 - A small Python client to validate flows
@@ -37,7 +37,7 @@ Open the interactive docs at: `http://localhost:8000/docs`
 - `POST /shares/{file_id}` — grant share access to another `user_id`
 - `GET  /shares/{file_id}` — list current shares
 
-### Optimistic Concurrency via ETag
+### Concurrency via ETag
 
 - On `GET /files/{id}`, response includes `ETag: <version>`
 - On `PUT /files/{id}`, the client **must** pass `If-Match: <version>`
@@ -81,14 +81,6 @@ curl -i -X POST http://localhost:8000/shares/$FILE_ID   -H "Content-Type: applic
 
 # List files as bob (should now include shared file)
 curl -s http://localhost:8000/files -H "X-User-Id: bob" | jq
-```
-
-## Client Script
-
-Run an end-to-end using the client helper:
-
-```bash
-python client_example.py
 ```
 
 ## Design Notes
