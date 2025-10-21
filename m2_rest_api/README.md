@@ -17,7 +17,7 @@ python3 -m venv .venv && source .venv/bin/activate
 # 2) Install deps
 pip install -r requirements.txt
 
-# 3) Run RabbitMQ (Docker recommended)
+# 3) Run RabbitMQ
 docker run -it --rm -p 5672:5672 -p 15672:15672 --name rabbitmq rabbitmq:3-management
 # UI: http://localhost:15672  (user: guest, pass: guest)
 
@@ -27,7 +27,7 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 Open the interactive docs at: `http://localhost:8000/docs`
 
-## Endpoints (summary)
+## Endpoints
 
 - `GET  /health` — liveness check
 - `POST /files` — multipart upload (`file`), requires `X-User-Id` header
@@ -46,9 +46,9 @@ Open the interactive docs at: `http://localhost:8000/docs`
 ## RabbitMQ Integration
 
 This API publishes events to a RabbitMQ queue (default: `file_alerts`) on:
-- `POST /files` → `file.uploaded`
-- `PUT /files/{id}` → `file.updated`
-- `POST /shares/{id}` → `file.shared`
+- `POST /files` -> `file.uploaded`
+- `PUT /files/{id}` -> `file.updated`
+- `POST /shares/{id}` -> `file.shared`
 
 ### Env Vars
 - `RABBITMQ_HOST` (default: `localhost`)
