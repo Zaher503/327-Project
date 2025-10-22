@@ -8,19 +8,19 @@ Demonstrates asynchronous, indirect communication between decoupled components u
 
 This satisfies the "message queue" requirement.
 
-## Requirements
-- Python 3.8+
-- [RabbitMQ](https://www.rabbitmq.com/install-windows.html) installed natively
-- [Erlang](https://www.erlang.org/downloads)
-- Python library: `pika`
+## Component Guide and Execution
 
-Install dependencies:
-```bash
-pip install pika
-```
+This project contains several distinct components. Here is a breakdown of what each component does, its dependencies, and how to run it.
 
-## — RESTful API (File Sync/Share)
+### General Requirements
+* **Python 3.8+** is required for all scripts.
+* **[RabbitMQ](https://www.rabbitmq.com/install-windows.html)** server must be running for the *RESTful API* and the *Message Queue Demo*. See the **Quickstart** section for instructions.
+* **[Erlang](https://www.erlang.org/downloads)**
 
+
+---
+
+### 1. RESTful API (Main Application)
 - File upload & download (HTTP over TCP)
 - Metadata persistence (SQLite + SQLAlchemy)
 - Concurrency with `ETag` + `If-Match` headers
@@ -113,3 +113,58 @@ curl -s http://localhost:8000/files -H "X-User-Id: bob" | jq
 - **Failure Handling:** Clear error codes, idempotent downloads, version checks on updates.
 - **Transparency:** Simple REST interfaces; internal policies can evolve behind the API.
 - **Openness:** OpenAPI schema available at `/openapi.json` and `/docs`.
+
+
+### 2. Message Queue Demo (producer.py, consumer.py)
+* **Files:** `producer.py`, `consumer.py`
+* **Purpose:** A simple, standalone demonstration of indirect communication using RabbitMQ. `producer.py` sends several hardcoded messages to the `file_alerts` queue, and `consumer.py` listens for and prints any messages it receives from that queue.
+* **Dependencies:** `pip install pika`
+* **How to Run:**
+    1.  Ensure your RabbitMQ server is running.
+    2.  In one terminal, start the consumer to listen for messages:
+        ```bash
+        python consumer.py
+        ```
+    3.  In a second terminal, run the producer to send the messages:
+        ```bash
+        python producer.py
+        ```
+
+---
+
+### 3. Non-Blocking TCP File Transfer Demo
+* **Files:** `tcpserver_nonblocking.py`, `tcpclient_nonblocking.py`
+* **Purpose:** Demonstrates a direct file transfer using **non-blocking** TCP sockets. The server (`tcpserver_nonblocking.py`) is set to non-blocking mode so it doesn't "hang" while waiting for a connection, allowing it to remain responsive. The client (`tcpclient_nonblocking.py`) sends a specified file, including its name, size, and an MD5 hash for integrity verification.
+* **Dependencies:** None (uses only Python standard libraries).
+* **How to Run:**
+    1.  In one terminal, start the server. You can specify where to save files:
+        ```bash
+        # Creates an 'uploads' directory if it doesn't exist
+        python tcpserver_nonblocking.py --save-dir ./uploads
+        ```
+    2.  In a second terminal, create a test file and send it with the client:
+        ```bash
+        # Create a dummy file to send
+        echo "this is a test file" > sample.txt
+        
+        # Run the client
+        python tcpclient_nonblocking.py --file sample.txt
+        ```
+    3.  The server will print the save status, and the client will print the transfer status (`OK` or `BAD`).
+
+---
+
+### 4. Simple Blocking TCP Demo
+* **Files:** `server.py`, `client.py`
+* **Purpose:** A minimal, "hello world" example of a basic **blocking** TCP socket connection. `server.py` waits for a single connection and prints whatever data it receives. `client.py` connects, sends one hardcoded message, and then disconnects. This is the simplest form of client-server communication.
+* **Dependencies:** None (uses only Python standard libraries).
+* **How to Run:**
+    1.  In one terminal, start the server:
+        ```bash
+        python server.py
+        ```
+    2.  In a second terminal, run the client:
+        ```bash
+        python client.py
+        ```
+    3.  The server will print the received message and both scripts will exit.
