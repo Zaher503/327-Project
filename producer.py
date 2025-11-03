@@ -14,9 +14,14 @@ def main():
         message = f"File file_{i}.txt was updated"
         channel.basic_publish(exchange='', routing_key='file_alerts', body=message)
         print(f"[Producer] Sent: {message}")
+
+        # resource protected write
+        write_log(f"[Producer] Sent {message}")
+        
         time.sleep(1)
 
     connection.close()
 
 if __name__ == "__main__":
+
     main()
