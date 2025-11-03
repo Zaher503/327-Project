@@ -3,7 +3,11 @@ import pika
 def main():
     # callback for processing messages
     def callback(ch, method, properties, body):
-        print(f"[Consumer] Received: {body.decode()}")
+        message = body.decode()
+        print(f"[Consumer] Received: {message}")
+
+        # added resource-protected write
+        write_log(f"[Consumer] Received: {message}")
 
     # connect to RabbitMQ
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
@@ -19,4 +23,5 @@ def main():
     channel.start_consuming()
 
 if __name__ == "__main__":
+
     main()
