@@ -1,4 +1,5 @@
 import pika
+from shared_log import write_log
 
 def main():
     # callback for processing messages
@@ -25,3 +26,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
