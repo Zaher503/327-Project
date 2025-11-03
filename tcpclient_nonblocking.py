@@ -11,7 +11,7 @@ def main():
     data = path.read_bytes()
     md5 = hashlib.md5(data).digest()
 
-with socket.create_connection((args.host, args.port)) as s:
+    with socket.create_connection((args.host, args.port)) as s:
         name_bytes = path.name.encode()
         header = struct.pack(">I", len(name_bytes)) + name_bytes + struct.pack(">Q", len(data)) + md5
         s.sendall(header)
