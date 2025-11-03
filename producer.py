@@ -1,5 +1,6 @@
 import pika
 import time
+from shared_log import write_log
 
 def main():
     # connect to RabbitMQ server
@@ -25,3 +26,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
