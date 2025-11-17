@@ -12,6 +12,10 @@ from db import Base, engine, SessionLocal
 from models import FileMeta, Share
 from mq import MqPublisher
 
+# --- M4 ADDITION: Transaction Locking Helper ---
+from transactions import acquire_file_lock
+# -----------------------------------------------
+
 # Initialize DB
 Base.metadata.create_all(bind=engine)
 
@@ -91,8 +95,10 @@ def upload_file(
         f.write(content)
 
     response.headers["ETag"] = f'"{meta.version}"'
-    # MQ event (skip quietly if broker down)
-    publisher.publish(f'file.uploaded id={meta.id} owner={meta.owner_id} name={meta.filename} version={meta.version}')
+    # MQ event
+    publisher.publish(
+        f'file.uploaded id={meta.id} owner={meta.owner_id} name={meta.filename} version={meta.version}'
+    )
     return meta
 
 @app.get("/files", response_model=List[FileOut])
@@ -121,7 +127,6 @@ def download_file(
     if not meta:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Access control: owner or shared
     shared = (
         db.query(Share)
         .filter(Share.file_id == file_id, Share.target_user_id == user_id)
@@ -150,13 +155,18 @@ def update_file(
     user_id: str = Depends(require_user),
     db: Session = Depends(get_db),
 ):
+    # ---------------------------
+    # Lookup & Authorization
+    # ---------------------------
     meta: FileMeta = db.query(FileMeta).filter(FileMeta.id == file_id).first()
     if not meta:
         raise HTTPException(status_code=404, detail="File not found")
     if meta.owner_id != user_id:
         raise HTTPException(status_code=403, detail="Only owner may update")
 
-    # Expect If-Match with the current version
+    # ---------------------------
+    # Optimistic Concurrency (If-Match / ETag)
+    # ---------------------------
     expected = f'"{meta.version}"'
     if not if_match or if_match.strip() != expected:
         raise HTTPException(
@@ -164,23 +174,39 @@ def update_file(
             detail=f'Version mismatch. Current ETag is {expected}. Provide If-Match header.',
         )
 
-    # Replace content
-    content = uploaded.file.read()
-    size = len(content)
-    disk_path = os.path.join(STORAGE_DIR, meta.id)
-    with open(disk_path, "wb") as f:
-        f.write(content)
+    # ============================================================
+    # === M4 ADDITION: Pessimistic CC + Transactional Wrapper ===
+    # ============================================================
+    with acquire_file_lock(file_id):  # prevents concurrent writers to same file_id
+        try:
+            # Replace content on disk
+            content = uploaded.file.read()
+            size = len(content)
+            disk_path = os.path.join(STORAGE_DIR, meta.id)
+            with open(disk_path, "wb") as f:
+                f.write(content)
 
-    # Bump version and timestamps
-    meta.version += 1
-    meta.size_bytes = size
-    meta.updated_at = datetime.utcnow()
-    db.add(meta)
-    db.commit()
-    db.refresh(meta)
+            # Bump version and timestamps in DB (single transaction)
+            meta.version += 1
+            meta.size_bytes = size
+            meta.updated_at = datetime.utcnow()
+            db.add(meta)
+            db.commit()      # COMMIT = transaction success
+            db.refresh(meta)
+        except Exception as e:
+            db.rollback()    # ABORT = rollback on error
+            raise HTTPException(
+                status_code=500,
+                detail=f"Transactional update failed and was rolled back: {str(e)}"
+            )
+    # ============================================================
+    # === END OF M4 ADDITION =====================================
+    # ============================================================
 
     response.headers["ETag"] = f'"{meta.version}"'
-    publisher.publish(f'file.updated id={meta.id} owner={meta.owner_id} name={meta.filename} version={meta.version}')
+    publisher.publish(
+        f'file.updated id={meta.id} owner={meta.owner_id} name={meta.filename} version={meta.version}'
+    )
     return meta
 
 @app.post("/shares/{file_id}", response_model=ShareOut, status_code=201)
@@ -208,7 +234,9 @@ def share_file(
     db.add(s)
     db.commit()
     db.refresh(s)
-    publisher.publish(f'file.shared id={file_id} owner={meta.owner_id} target={share.target_user_id}')
+    publisher.publish(
+        f'file.shared id={file_id} owner={meta.owner_id} target={share.target_user_id}'
+    )
     return s
 
 @app.get("/shares/{file_id}", response_model=List[ShareOut])
