@@ -1,7 +1,15 @@
-import pika, json, socket, argparse
+import pika
+import json
+import socket
+import argparse
 
-def send_p2p_event(peer_host, peer_port, file_id, version):
-    msg = json.dumps({"type":"event","file_id":file_id,"version":int(version)}) + "\n"
+def send_p2p_event(peer_host, peer_port, file_id, version, ts):
+    msg = json.dumps({
+        "type": "event",
+        "file_id": file_id,
+        "version": int(version),
+        "ts": int(ts)
+    }) + "\n"
     with socket.create_connection((peer_host, peer_port), timeout=1.0) as s:
         s.sendall(msg.encode())
 
@@ -22,11 +30,12 @@ def main():
         txt = body.decode()
         try:
             data = json.loads(txt)
-            file_id = data.get("file_id") or data.get("id")
-            version = data.get("version") or 1
+            file_id = data.get("file_id")
+            version = data.get("version", 1)
+            ts = data.get("ts", 0)
         except json.JSONDecodeError:
             # fallback: look for "id=" and "version="
-            file_id, version = None, 1
+            file_id, version, ts = None, 1, 0
             parts = txt.replace(",", " ").split()
             for p in parts:
                 if p.startswith("id="): file_id = p.split("=",1)[1]
@@ -35,8 +44,8 @@ def main():
                 print(f"[Bridge] Unrecognized message: {txt}")
                 return
         try:
-            send_p2p_event(ph, pp, file_id, version)
-            print(f"[Bridge] forwarded event: {file_id} -> v{version}")
+            send_p2p_event(ph, pp, file_id, version, ts)
+            print(f"[Bridge] forwarded event: {file_id} -> v{version} ts={ts}")
         except Exception as e:
             print(f"[Bridge] forward failed: {e}")
 
