@@ -1,10 +1,15 @@
-import asyncio, json, time, random, argparse
+import asyncio
+import json
+import time
+import random
+import argparse
 from typing import Dict, Set, Tuple
+from logical_clock import LamportClock
 
 # JSON-line protocol messages:
 # {"type":"hello","from":"host:port"}
 # {"type":"state","from":"host:port","files":{"id":ver,...},"peers":["h1:p1","h2:p2"]}
-# {"type":"event","file_id":"...", "version": N}
+# {"type":"event","file_id":"...", "version": N, "ts": T}
 
 class Peer:
     def __init__(self, host: str, port: int, bootstrap: Set[Tuple[str,int]]):
@@ -14,6 +19,9 @@ class Peer:
         self.peers: Set[Tuple[str,int]] = set(bootstrap)
         self.connections = {}                # (h,p) -> writer
         self.backoff_until = {}              # (h,p) -> unix timestamp
+
+        # logical clock for event ordering
+        self.clock = LamportClock()
 
     async def start(self):
         server = await asyncio.start_server(self._handle_conn, self.host, self.port)
@@ -67,6 +75,14 @@ class Peer:
                     self.connections.pop(key, None)
 
     async def _on_msg(self, msg, writer):
+        # merge logical time (Lamport) for any incoming message
+        incoming_ts = msg.get("ts")
+        if incoming_ts is not None:
+            local_time = self.clock.recv_event(incoming_ts)
+            print(f"[P2P] clock update -> {local_time}")
+        else:
+            self.clock.tick()
+
         t = msg.get("type")
         if t == "hello":
             frm = msg.get("from")
@@ -91,9 +107,11 @@ class Peer:
             newv = max(ver, self.files.get(fid, 0))
             if newv != self.files.get(fid, 0):
                 self.files[fid] = newv
-                print(f"[P2P] event applied {fid} -> v{newv}")
+                print(f"[P2P] event applied {fid} -> v{newv} (ts={self.clock.time})")
 
     async def _send(self, writer: asyncio.StreamWriter, obj):
+        # attach Lamport timestamp to every outgoing message
+        obj["ts"] = self.clock.send_event()
         writer.write((json.dumps(obj)+"\n").encode()); await writer.drain()
 
 def parse_args():
@@ -116,3 +134,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
