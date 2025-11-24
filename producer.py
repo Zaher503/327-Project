@@ -1,8 +1,12 @@
 import pika
 import time
 from shared_log import write_log
+from logical_clock import LamportClock
+import json
 
 def main():
+    clock = LamportClock()
+
     # connect to RabbitMQ server
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     channel = connection.channel()
@@ -12,18 +16,27 @@ def main():
 
     # simulate sending file alerts
     for i in range(5):
-        message = f"File file_{i}.txt was updated"
-        channel.basic_publish(exchange='', routing_key='file_alerts', body=message)
-        print(f"[Producer] Sent: {message}")
+        ts = clock.send_event()
 
-        # resource protected write
-        write_log(f"[Producer] Sent {message}")
-        
+        payload = {
+            "file_id": f"file_{i}.txt",
+            "version": i + 1,
+            "ts": ts
+        }
+
+        channel.basic_publish(
+            exchange='',
+            routing_key='file_alerts',
+            body=json.dumps(payload)
+        )
+
+        print(f"[Producer] Sent: {payload}")
+        write_log(f"[Producer] Sent {payload}")
+
         time.sleep(1)
 
     connection.close()
 
 if __name__ == "__main__":
-
     main()
 
