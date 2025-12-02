@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify-Style File Sync Demo</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0b0b0b;
+      color: #f5f5f5;
+      margin: 0;
+    }
+    header {
+      background: #1db954;
+      color: #0b0b0b;
+      padding: 16px 24px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    header span {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    main {
+      padding: 20px 24px 40px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #181818;
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 0 0 1px #282828;
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    label {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    input[type="text"] {
+      background: #121212;
+      color: #f5f5f5;
+      border-radius: 4px;
+      border: 1px solid #333;
+      padding: 6px 8px;
+      font-size: 14px;
+    }
+    input[type="file"] {
+      font-size: 13px;
+    }
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      background: #1db954;
+      color: #0b0b0b;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: #333;
+      color: #f5f5f5;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid #333;
+    }
+    th {
+      font-weight: 600;
+      color: #b3b3b3;
+    }
+    tr:hover {
+      background: #202020;
+    }
+    code {
+      font-size: 12px;
+      background: #111;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    #status {
+      font-size: 13px;
+      margin-top: 4px;
+      min-height: 18px;
+    }
+    #status.ok { color: #1db954; }
+    #status.error { color: #f54242; }
+    small {
+      font-size: 12px;
+      color: #aaaaaa;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Spotify-Style File Sync Demo</h1>
+    <span>Backed by your CECS distributed file sync API</span>
+  </div>
+  <div>
+    <small>Case study: Spotify • REST + RabbitMQ + TCP</small>
+  </div>
+</header>
+
+<main>
+  <!-- 1. User session -->
+  <section class="card">
+    <h2>1. Choose a user</h2>
+    <div class="row">
+      <label for="userId">User ID (e.g., <code>alice</code>, <code>bob</code>):</label>
+      <input id="userId" type="text" placeholder="alice" value="alice" />
+      <button id="setUserBtn">Use this user</button>
+    </div>
+    <div id="currentUser" style="margin-top:8px;font-size:13px;opacity:0.9;">
+      Current user: <strong>alice</strong>
+    </div>
+  </section>
+
+  <!-- 2. Upload track -->
+  <section class="card">
+    <h2>2. Upload a “track” (file)</h2>
+    <div class="row">
+      <input id="fileInput" type="file" />
+      <button id="uploadBtn">Upload</button>
+      <button class="secondary" id="refreshBtn">Refresh Library</button>
+    </div>
+    <small>
+      This calls <code>POST /files</code> with header <code>X-User-Id</code>.
+      Your RabbitMQ consumer will print <code>file.uploaded</code> events.
+    </small>
+    <div id="status"></div>
+  </section>
+
+  <!-- 3. Library -->
+  <section class="card">
+    <h2>3. Your “library” (visible files)</h2>
+    <small>
+      This is backed by <code>GET /files</code>. Think of each row as a Spotify track:
+      owner, size, version, and ID.
+    </small>
+    <table id="filesTable">
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Owner</th>
+          <th>Version</th>
+          <th>Size (bytes)</th>
+          <th>File ID</th>
+        </tr>
+      </thead>
+      <tbody id="filesBody">
+        <tr><td colspan="5">No files yet. Upload one!</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 4. Sharing -->
+  <section class="card">
+    <h2>4. Share a track with another user</h2>
+    <div class="row">
+      <label for="shareFileId">File ID:</label>
+      <input id="shareFileId" type="text" placeholder="copy from table above" style="width:260px;" />
+      <label for="shareTarget">Share with user:</label>
+      <input id="shareTarget" type="text" placeholder="bob" />
+      <button id="shareBtn">Share</button>
+    </div>
+    <small>
+      This calls <code>POST /shares/{file_id}</code> with JSON body
+      <code>{ "target_user_id": "..." }</code>. Then log in as that user and hit
+      “Refresh Library”.
+    </small>
+  </section>
+
+  <!-- 5. Demo script for you (speaker notes) -->
+  <section class="card">
+    <h2>5. Suggested live demo flow</h2>
+    <ol style="font-size:13px; padding-left:20px;">
+      <li>Start the API (<code>uvicorn app:app --reload</code>) and RabbitMQ consumer in terminals.</li>
+      <li>Open this page as <code>alice</code>. Upload a file (e.g., <code>README.md</code>).</li>
+      <li>Show how it appears in the library table; point to the file ID and version.</li>
+      <li>Show the RabbitMQ terminal printing <code>file.uploaded</code> events.</li>
+      <li>Copy the file ID, share it with <code>bob</code>, switch user to <code>bob</code>, refresh — the "track" appears.</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+  let currentUser = "alice";
+
+  function setStatus(msg, isError = false) {
+    const el = document.getElementById("status");
+    el.textContent = msg || "";
+    el.className = isError ? "error" : "ok";
+  }
+
+  function getUserId() {
+    return currentUser.trim();
+  }
+
+  async function refreshFiles() {
+    const userId = getUserId();
+    if (!userId) {
+      setStatus("Set a user first.", true);
+      return;
+    }
+    try {
+      setStatus("Loading library…");
+      const res = await fetch("/files", {
+        headers: { "X-User-Id": userId }
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error("GET /files failed: " + res.status + " " + text);
+      }
+      const data = await res.json();
+      const tbody = document.getElementById("filesBody");
+      tbody.innerHTML = "";
+      if (!data.length) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.textContent = "No files for this user yet.";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      } else {
+        for (const f of data) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${f.filename}</td>
+            <td>${f.owner_id}</td>
+            <td>${f.version}</td>
+            <td>${f.size_bytes}</td>
+            <td><code>${f.id}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+      }
+      setStatus("Library refreshed.");
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message, true);
+    }
+  }
+
+  async function uploadFile() {
+    const userId = getUserId();
+    const input = document.getElementById("fileInput");
+    if (!userId) {
+      setStatus("Set a user first.", true);
+      return;
+    }
+    if (!input.files.length) {
+      setStatus("Choose a file to upload.", true);
+      return;
+    }
+    const file = input.files[0];
+    const formData = new FormData();
+    // Name must match parameter in app.py: uploaded: UploadFile = File(...)
+    formData.append("uploaded", file);
+
+    try {
+      setStatus("Uploading…");
+      const res = await fetch("/files", {
+        method: "POST",
+        headers: { "X-User-Id": userId },
+        body: formData
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error("Upload failed: " + res.status + " " + text);
+      }
+      const data = await res.json();
+      setStatus("Uploaded “" + data.filename + "” (version " + data.version + ").");
+      await refreshFiles();
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message, true);
+    }
+  }
+
+  async function shareFile() {
+    const userId = getUserId();
+    const fileId = document.getElementById("shareFileId").value.trim();
+    const target = document.getElementById("shareTarget").value.trim();
+    if (!userId || !fileId || !target) {
+      setStatus("Need current user, file ID, and target user.", true);
+      return;
+    }
+    try {
+      setStatus("Sharing…");
+      const res = await fetch("/shares/" + encodeURIComponent(fileId), {
+        method: "POST",
+        headers: {
+          "X-User-Id": userId,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ target_user_id: target })
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error("Share failed: " + res.status + " " + text);
+      }
+      const data = await res.json();
+      setStatus("Shared file with user “" + data.target_user_id + "”.");
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message, true);
+    }
+  }
+
+  // Wire up events
+  document.getElementById("setUserBtn").addEventListener("click", () => {
+    const v = document.getElementById("userId").value.trim();
+    if (!v) {
+      setStatus("User ID cannot be empty.", true);
+      return;
+    }
+    currentUser = v;
+    document.getElementById("currentUser").innerHTML =
+      'Current user: <strong>' + currentUser + "</strong>";
+    setStatus("Switched to user " + currentUser + ".");
+    refreshFiles();
+  });
+
+  document.getElementById("uploadBtn").addEventListener("click", uploadFile);
+  document.getElementById("refreshBtn").addEventListener("click", refreshFiles);
+  document.getElementById("shareBtn").addEventListener("click", shareFile);
+
+  // Initial load
+  refreshFiles();
+</script>
+</body>
+</html>

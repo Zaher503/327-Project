@@ -1,4 +1,7 @@
 import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+
 from datetime import datetime
 from typing import List, Optional
 
@@ -23,6 +26,17 @@ STORAGE_DIR = os.path.join(os.getcwd(), "storage")
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
 app = FastAPI(title="File Sync/Share — Milestone 2 REST API")
+
+# Serve static assets for demo UI
+app.mount("/static", StaticFiles(directory="static"), name="static")
+@app.get("/", response_class=HTMLResponse)
+def spotify_demo_root():
+    """Serve the Spotify-style demo UI."""
+    html_path = os.path.join(
+        os.path.dirname(__file__), "static", "spotify_demo.html"
+    )
+    with open(html_path, "r", encoding="utf-8") as f:
+        return f.read()
 
 # Message queue publisher (safe even if broker is down)
 publisher = MqPublisher()
