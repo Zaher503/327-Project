@@ -4,55 +4,53 @@
   <meta charset="UTF-8" />
   <title>Spotify-Style File Sync Demo</title>
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0b0b0b;
+      background: #121212;
       color: #f5f5f5;
-      margin: 0;
+      padding: 24px;
     }
     header {
-      background: #1db954;
-      color: #0b0b0b;
-      padding: 16px 24px;
       display: flex;
-      align-items: baseline;
       justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
     }
     header h1 {
-      margin: 0;
       font-size: 24px;
-      font-weight: 700;
+      margin-bottom: 4px;
     }
     header span {
-      font-size: 14px;
-      opacity: 0.9;
+      font-size: 13px;
+      color: #bbbbbb;
     }
     main {
-      padding: 20px 24px 40px;
-      max-width: 1000px;
-      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
     .card {
       background: #181818;
-      border-radius: 10px;
       padding: 16px 18px;
-      margin-bottom: 18px;
-      box-shadow: 0 0 0 1px #282828;
+      border-radius: 10px;
+      border: 1px solid #282828;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
     .card h2 {
-      margin: 0 0 8px;
       font-size: 18px;
-      font-weight: 600;
+      margin-bottom: 10px;
     }
     .row {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
-      margin-top: 8px;
+      margin-bottom: 8px;
     }
     label {
-      font-size: 13px;
+      font-size: 14px;
+      margin-right: 4px;
       opacity: 0.9;
     }
     input[type="text"] {
@@ -78,6 +76,10 @@
     }
     button.secondary {
       background: #333;
+      color: #f5f5f5;
+    }
+    button.danger {
+      background: #b61d1d;
       color: #f5f5f5;
     }
     button:disabled {
@@ -153,6 +155,9 @@
       <input id="fileInput" type="file" />
       <button id="uploadBtn">Upload</button>
       <button class="secondary" id="refreshBtn">Refresh Library</button>
+      <button class="secondary danger" id="resetBtn" title="Hide all existing files for this demo session.">
+        Reset Library
+      </button>
     </div>
     <small>
       This calls <code>POST /files</code> with header <code>X-User-Id</code>.
@@ -166,7 +171,8 @@
     <h2>3. Your “library” (visible files)</h2>
     <small>
       This is backed by <code>GET /files</code>. Think of each row as a Spotify track:
-      owner, size, version, and ID.
+      owner, size, version, and ID. “Reset Library” hides older files created before
+      the reset time, so you can start a clean demo.
     </small>
     <table id="filesTable">
       <thead>
@@ -209,13 +215,17 @@
       <li>Open this page as <code>alice</code>. Upload a file (e.g., <code>README.md</code>).</li>
       <li>Show how it appears in the library table; point to the file ID and version.</li>
       <li>Show the RabbitMQ terminal printing <code>file.uploaded</code> events.</li>
-      <li>Copy the file ID, share it with <code>bob</code>, switch user to <code>bob</code>, refresh — the "track" appears.</li>
+      <li>Copy the file ID, share it with <code>bob</code>, switch user to <code>bob</code>, refresh — the “track” appears.</li>
+      <li>If you want to restart the story, click <strong>Reset Library</strong> to hide old files and demo from a clean slate.</li>
     </ol>
   </section>
 </main>
 
 <script>
   let currentUser = "alice";
+  // Any file with created_at < libraryCutoffIso will be hidden in the table.
+  // This is per-browser-session only; the server data is unchanged.
+  let libraryCutoffIso = null;
 
   function setStatus(msg, isError = false) {
     const el = document.getElementById("status");
@@ -242,14 +252,22 @@
         const text = await res.text();
         throw new Error("GET /files failed: " + res.status + " " + text);
       }
-      const data = await res.json();
+      let data = await res.json();
+
+      // If we've "reset" the library, hide files created before that time.
+      if (libraryCutoffIso) {
+        data = data.filter(f => !f.created_at || f.created_at >= libraryCutoffIso);
+      }
+
       const tbody = document.getElementById("filesBody");
       tbody.innerHTML = "";
       if (!data.length) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
         td.colSpan = 5;
-        td.textContent = "No files for this user yet.";
+        td.textContent = libraryCutoffIso
+          ? "Library reset for this demo. Upload a new file."
+          : "No files for this user yet.";
         tr.appendChild(td);
         tbody.appendChild(tr);
       } else {
@@ -338,26 +356,44 @@
     }
   }
 
-  // Wire up events
-  document.getElementById("setUserBtn").addEventListener("click", () => {
-    const v = document.getElementById("userId").value.trim();
-    if (!v) {
-      setStatus("User ID cannot be empty.", true);
-      return;
-    }
-    currentUser = v;
-    document.getElementById("currentUser").innerHTML =
-      'Current user: <strong>' + currentUser + "</strong>";
-    setStatus("Switched to user " + currentUser + ".");
+  function resetLibrary() {
+    // Mark the cut-off time *before* we upload anything new.
+    libraryCutoffIso = new Date().toISOString();
+
+    const tbody = document.getElementById("filesBody");
+    tbody.innerHTML = "";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.textContent = "Library reset for this demo. Upload a new file.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+
+    setStatus("Demo library reset. Older files are now hidden in this browser.", false);
+  }
+
+  // Wire up buttons on load
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("setUserBtn").addEventListener("click", () => {
+      const inp = document.getElementById("userId");
+      currentUser = inp.value || "alice";
+      document.querySelector("#currentUser strong").textContent = currentUser;
+      setStatus("User set to " + currentUser + ".");
+      refreshFiles();
+    });
+
+    document.getElementById("uploadBtn").addEventListener("click", uploadFile);
+    document.getElementById("refreshBtn").addEventListener("click", refreshFiles);
+    document.getElementById("shareBtn").addEventListener("click", shareFile);
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      if (confirm("Reset demo library? Older files will be hidden until you reload this page.")) {
+        resetLibrary();
+      }
+    });
+
+    // Initial load
     refreshFiles();
   });
-
-  document.getElementById("uploadBtn").addEventListener("click", uploadFile);
-  document.getElementById("refreshBtn").addEventListener("click", refreshFiles);
-  document.getElementById("shareBtn").addEventListener("click", shareFile);
-
-  // Initial load
-  refreshFiles();
 </script>
 </body>
 </html>
