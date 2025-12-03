@@ -1,5 +1,11 @@
 import asyncio
 import json
+import sys
+import os
+
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ricart_agrawala import RANode
 
 # Mock Transport to simulate partition

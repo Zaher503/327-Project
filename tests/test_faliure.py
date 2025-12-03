@@ -32,9 +32,18 @@ def test_atomicity_simulation():
         # ensuring DB isn't touched.
     )
 
-    # 3. Verify State (Consistency Check)
-    resp = requests.get(f"{BASE_URL}/files/{file_id}", headers={"X-User-Id": "tester"})
-    current_version = resp.json()['version']  # Should be mapped from FileOut model
+    # 3. Verify State (Consistency Check) - NEW ROBUST METHOD
+    # Use the GET /files endpoint to retrieve metadata as JSON
+    resp_list = requests.get(f"{BASE_URL}/files", headers={"X-User-Id": "tester"})
+    files = resp_list.json()
+    
+    # Find the specific file in the list using the file_id
+    file_meta = next((f for f in files if f['id'] == file_id), None)
+    
+    if not file_meta:
+        raise Exception(f"File ID {file_id} not found in file list.")
+        
+    current_version = file_meta['version'] # Get version directly from JSON metadata
 
     print(f"[Step 2] Current version on DB: {current_version}")
 
